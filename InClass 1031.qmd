@@ -1,0 +1,101 @@
+---
+title: "In-Class 10/31"
+format: html
+editor: visual
+---
+
+```{r}
+library(tidyverse)
+library(tidytext)
+library(rvest)
+```
+
+```{r}
+wiki_url <- "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+
+# Get a vector of usable links
+urls <- wiki_url %>% 
+  read_html() %>% 
+  html_elements("td:nth-child(2) a") %>% 
+  html_attrs() %>% 
+  tibble() %>% 
+  rename(web = ".") %>% 
+  unnest(cols = web) %>% 
+  filter(str_detect(web,
+                    pattern = "wiki")) %>% 
+  mutate(url = paste0("https://en.wikipedia.org",
+                      web)) %>% 
+  pull(url)
+```
+
+```{r}
+spnames <- wiki_url %>% 
+  read_html() %>% 
+  html_elements("td:nth-child(2) a") %>% 
+  html_text()
+
+urls[1] %>% #trying one to make sure it works before using all the urls
+  read_html() %>% 
+  html_elements("p+ ul li , p") %>% 
+  html_text() %>% 
+  tibble() %>% 
+  mutate(document = spnames[1])
+
+sp_list <- list()
+
+for(i in 1:length(urls)){
+ sp_list[[i]] <-  urls[i] %>% 
+    read_html() %>% 
+    html_elements("p+ ul li , p") %>% 
+    html_text() %>% 
+    tibble() %>% 
+    rename(text = ".") %>% 
+    mutate(document = spnames[i])
+}
+
+```
+
+```{r}
+sp_tibble <- sp_list %>% 
+  bind_rows()
+
+#
+#tidy the text data
+tidy_sp <- sp_tibble %>% 
+  unnest_tokens(input = text,
+                output = word) %>% 
+  anti_join(get_stopwords())
+```
+
+```{r}
+company1 <- tidy_sp %>% 
+  anti_join(stop_words) %>% 
+    filter(document == "3M") %>% 
+  inner_join(get_sentiments("afinn"))
+```
+
+```{r}
+company2 <- tidy_sp %>% 
+  anti_join(stop_words) %>% 
+    filter(document == "Amazon") %>% 
+  inner_join(get_sentiments("afinn"))
+```
+
+```{r}
+t.test(company1$value,
+       company2$value)
+```
+
+P-value is large so we cannot reject the null hypothesis
+
+```{r}
+wilcox.test(company1$value,
+       company2$value)
+```
+
+P-value is still large so we cannot reject the null hypothesis
+
+```{r}
+qplot(company1$value)
+qplot(company2$value)
+```

@@ -1,0 +1,154 @@
+---
+title: "HW8"
+format: html
+editor: visual
+---
+
+```{r}
+library(tidyverse)
+library(tidytext)
+library(rvest)
+```
+
+```{r}
+books_url <- "https://thegreatestbooks.org/"
+```
+
+```{r}
+# Get a vector of usable links
+urls1 <- books_url %>% 
+  read_html() %>% 
+  html_elements("h4 a:nth-child(1)") %>% 
+  html_attrs() %>% 
+  tibble() %>% 
+  rename(web = ".") %>% 
+  unnest(cols = web) %>% 
+  filter(str_detect(web,
+                    pattern = "/items/")) %>% 
+  mutate(url = paste0("https://thegreatestbooks.org",
+                      web)) %>% 
+  pull(url)
+```
+
+```{r}
+booknames <- books_url %>%
+  read_html() %>% 
+  html_elements("h4 a:nth-child(1)") %>% 
+  html_text() 
+  
+
+```
+
+```{r}
+urls1[1] %>% #trying one to make sure it works before using all the urls
+  read_html() %>% 
+  html_elements("#primary_page p") %>% 
+  html_text() %>% 
+  tibble() %>% 
+  mutate(document = booknames[1])
+```
+
+```{r}
+book_list <- list()
+```
+
+```{r}
+for(i in 1:length(urls1)){
+ book_list[[i]] <-  urls1[i] %>% 
+    read_html() %>% 
+    html_elements("#primary_page p") %>% 
+    html_text() %>% 
+    tibble() %>% 
+    rename(text = ".") %>% 
+    mutate(document = booknames[i])
+}
+```
+
+```{r}
+book_tibble <- book_list %>% 
+  bind_rows()
+```
+
+```{r}
+#tidy the text data
+tidy_book <- book_tibble %>% 
+  unnest_tokens(input = text,
+                output = word) %>% 
+  anti_join(get_stopwords())
+```
+
+```{r}
+#sentiment analysis
+tidy_book %>% 
+  inner_join(get_sentiments()) %>% 
+  count(document,sentiment) %>% 
+  pivot_wider(names_from = sentiment,
+              values_from = n) %>% 
+  mutate(sent = positive - negative) %>% 
+  filter(abs(sent) > 0) %>% 
+  ggplot() +
+  geom_col(aes(x = sent,y = document)) 
+```
+
+```{r}
+# Topic Model
+library(tm)
+book_dtm <-  tidy_book %>% 
+  count(document,word) %>% 
+  cast_dtm(document = document,
+           term = word,
+           value = n)
+```
+
+```{r}
+library(topicmodels)
+
+book_lda <- LDA(book_dtm,
+              k = 5,
+              control = list(seed = 1234))
+```
+
+```{r}
+#Beta probabilities
+book_lda %>% 
+  tidy(matrix = "beta") %>% 
+  group_by(topic) %>% 
+  slice_max(order_by = beta,n=10) %>% 
+  ggplot() +
+  geom_col(aes(beta,term,fill = factor(topic)),
+           show.legend = F) +
+  facet_wrap(~factor(topic),scales= "free")
+```
+
+```{r}
+new_stops1 <- tibble(word = c("story","novel","also","along","one","american","set","life","themes","published","narrator","full","first","tales","tale","stories","literature","following","edition","characters", "novel's","almost","written","literary","throughout","known","history","century","part"))
+```
+
+```{r}
+## Second round of LDA - go up to the row data
+book_dtm2 <-  tidy_book %>% 
+  anti_join(new_stops1) %>% 
+  count(document,word) %>% 
+  cast_dtm(document = document,
+           term = word,
+           value = n)
+```
+
+```{r}
+book_lda2 <- LDA(book_dtm2,
+               k = 5,
+               control = list(seed = 1234))
+```
+
+```{r}
+#Beta probabilities
+book_lda2 %>% 
+  tidy(matrix = "beta") %>% 
+  group_by(topic) %>% 
+  slice_max(order_by = beta,
+            n = 10) %>% 
+  ggplot() +
+  geom_col(aes(beta,term,fill = factor(topic)),
+           show.legend = F) +
+  facet_wrap(~factor(topic),scales= "free")
+```
